@@ -1,8 +1,9 @@
 package main
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
+	// "crypto/sha1" // only for consistency if you later want hash back (safe to keep/remove)
+	"encoding/base64"
+	// "encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,15 +22,15 @@ const (
 )
 
 type Request struct {
-	HTML   string `json:"html"`
-	Prefix string `json:"prefix"`
+	HTML     string `json:"html"`      // BASE64 encoded HTML
+	FileName string `json:"file_name"` // base name
 }
 
 type SuccessResponse struct {
 	Success     bool      `json:"success"`
 	Link        string    `json:"link"`
 	ExpiresAt   time.Time `json:"expires_at"`
-	TimeElapsed int64     `json:"time_elapsed"` // ms
+	TimeElapsed int64     `json:"time_elapsed"`
 }
 
 type ErrorResponse struct {
@@ -65,19 +66,27 @@ func convertHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.HTML == "" {
-		writeError(w, "html is required", http.StatusBadRequest)
+		writeError(w, "html (base64 encoded) is required", http.StatusBadRequest)
 		return
 	}
 
-	prefix := req.Prefix
-	if prefix == "" {
-		prefix = "file"
+	if req.FileName == "" {
+		writeError(w, "file_name is required", http.StatusBadRequest)
+		return
 	}
 
-	filename := buildFileName(prefix)
+	decodedHTML, err := base64.StdEncoding.DecodeString(req.HTML)
+	if err != nil {
+		writeError(w, "invalid base64 html", http.StatusBadRequest)
+		return
+	}
+
+	html := string(decodedHTML)
+
+	filename := buildFileName(req.FileName)
 	fullPath := filepath.Join(tempDir, filename)
 
-	if err := htmlToPDF(req.HTML, fullPath); err != nil {
+	if err := htmlToPDF(html, fullPath); err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -108,7 +117,7 @@ func htmlToPDF(html string, output string) error {
 
 	pdfg.AddPage(page)
 
-	// 0.25 inch ≈ 6mm
+	// 0.25 inch ≈ 6mm margins
 	pdfg.MarginTop.Set(6)
 	pdfg.MarginBottom.Set(6)
 	pdfg.MarginLeft.Set(6)
@@ -144,21 +153,13 @@ func (sr *stringReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-func buildFileName(prefix string) string {
+func buildFileName(name string) string {
 	ts := time.Now().Format("20060102_150405")
-	hashSource := fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
-
-	h := sha1.Sum([]byte(hashSource))
-	hash := hex.EncodeToString(h[:])[:10]
-
-	return fmt.Sprintf("%s_%s_%s.pdf", prefix, ts, hash)
+	return fmt.Sprintf("%s_%s.pdf", name, ts)
 }
 
 func getServerURL(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
+	scheme := "https"
 	return fmt.Sprintf("%s://%s", scheme, r.Host)
 }
 

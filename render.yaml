@@ -4,6 +4,7 @@ services:
     env: go
     buildCommand: |
       apt-get update
-      apt-get install -y wkhtmltopdf
+      apt-get install -y wkhtmltopdf xvfb ttf-mscorefonts-installer fontconfig
+      fc-cache -f
       go build -o app
     startCommand: ./app
