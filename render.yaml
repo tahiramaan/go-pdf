@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: pdf-api
+    env: go
+    buildCommand: |
+      apt-get update
+      apt-get install -y wkhtmltopdf
+      go build -o app
+    startCommand: ./app
